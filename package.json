@@ -1,0 +1,210 @@
+{
+  "name": "embedded-targets-manager",
+  "displayName": "Embedded Targets Manager",
+  "description": "Dashboard to discover and run CMake custom targets across embedded test modules.",
+  "version": "0.0.1",
+  "publisher": "niwciu",
+  "license": "MIT",
+  "icon": "resources/ico.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/niwciu/embedded_targets_manager.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:targetsManager.menu",
+    "onCommand:targetsManager.refresh",
+    "onCommand:targetsManager.runAll",
+    "onCommand:targetsManager.rerunFailed",
+    "onCommand:targetsManager.stopAll",
+    "onCommand:targetsManager.runTargetForModule",
+    "onCommand:targetsManager.runTargetForAllModules",
+    "onCommand:targetsManager.openDashboard",
+    "onCommand:targetsManager.openSettings",
+    "onCommand:targetsManager.menuAction"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "targetsManager",
+          "title": "Embedded Targets Manager",
+          "icon": "resources/targets.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "targetsManager",
+          "title": "Embedded Targets Manager",
+          "icon": "resources/ico.png"
+        }
+      ]
+    },
+    "views": {
+      "targetsManager": [
+        {
+          "id": "targetsManager.menu",
+          "name": "Embedded Targets Manager",
+          "title": "Embedded Targets Manager",
+          "icon": "resources/ico.png"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "targetsManager.refresh",
+        "title": "Targets Dashboard: Refresh"
+      },
+      {
+        "command": "targetsManager.runAll",
+        "title": "Targets Dashboard: Run All"
+      },
+      {
+        "command": "targetsManager.rerunFailed",
+        "title": "Targets Dashboard: Rerun Failed"
+      },
+      {
+        "command": "targetsManager.stopAll",
+        "title": "Targets Dashboard: Stop All"
+      },
+      {
+        "command": "targetsManager.runTargetForModule",
+        "title": "Targets Dashboard: Run Target for Module"
+      },
+      {
+        "command": "targetsManager.runTargetForAllModules",
+        "title": "Targets Dashboard: Run Target for All Modules"
+      },
+      {
+        "command": "targetsManager.openDashboard",
+        "title": "Targets Dashboard: Open Dashboard"
+      },
+      {
+        "command": "targetsManager.openSettings",
+        "title": "Targets Dashboard: Open Settings"
+      },
+      {
+        "command": "targetsManager.menuAction",
+        "title": "Targets Dashboard: Menu Action"
+      }
+    ],
+    "configuration": [
+      {
+        "title": "Build System",
+        "properties": {
+          "targetsManager.buildSystem": {
+            "type": "string",
+            "enum": ["auto", "ninja", "make"],
+            "default": "auto",
+            "description": "Build system to use when configuring modules."
+          },
+          "targetsManager.makeJobs": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": ["auto"]
+              },
+              {
+                "type": "number",
+                "minimum": 1
+              }
+            ],
+            "default": "auto",
+            "description": "Number of jobs to pass to make."
+          },
+          "targetsManager.maxParallel": {
+            "type": "number",
+            "default": 4,
+            "minimum": 1,
+            "description": "Maximum number of targets to run in parallel."
+          }
+        }
+      },
+      {
+        "title": "Dashboards",
+        "properties": {
+          "targetsManager.dashboards": {
+            "type": "array",
+            "description": "Dashboards displayed in the Embedded Targets Manager menu.",
+            "default": [
+              {
+                "name": "Targets Dashboard",
+                "moduleRoots": ["test"],
+                "excludedModules": ["unity", "cmock", "CMock", "Cmock", "Unity", "template"],
+                "targets": [
+                  "format",
+                  "format_test",
+                  "all",
+                  "run",
+                  "cppcheck",
+                  "ccm",
+                  "ccc",
+                  "ccmr",
+                  "ccr",
+                  "ccca",
+                  "ccra"
+                ]
+              }
+            ],
+            "items": {
+              "type": "object",
+              "required": ["name", "moduleRoots"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Dashboard name shown in the menu."
+                },
+                "moduleRoots": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "One or two module root paths relative to the workspace."
+                },
+                "excludedModules": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": ["unity", "cmock", "CMock", "Cmock", "Unity", "template"],
+                  "description": "Module names to exclude for this dashboard."
+                },
+                "targets": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Targets displayed in this dashboard."
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm install && npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "typescript": "^5.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.6",
+    "@types/vscode": "^1.85.0",
+    "eslint": "^8.56.0"
+  }
+}

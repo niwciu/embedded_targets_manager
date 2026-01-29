@@ -1,0 +1,35 @@
+# Embedded Targets Manager
+
+A VS Code extension that discovers CMake configuration "modules" from configured roots, shows dashboards of custom targets, and runs them through native VS Code tasks/terminals.
+
+## Features
+
+- Configurable dashboards with per-dashboard module roots, exclusions, and target lists
+- Module discovery under one or two root paths per dashboard
+- Parallel execution with controlled concurrency
+- Native terminal output with clickable file:line:column links
+- Status dashboard (⏳ ✓ ✗ -) with per-module configure actions
+
+## Usage
+
+1. Open the **Targets** activity bar icon.
+2. Use **Options** to configure the targets dashboard.
+3. Select your configured targets dashboard in the left column to start managing your project targets.
+4. Click **▶** to run a target, or click the status icon to reveal the terminal.
+5. Use the toolbar to refresh, configure, run all, rerun failed, stop all, or clear task terminals.
+
+## Configuration
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `targetsManager.buildSystem` | `auto` | `auto`, `ninja`, or `make`. |
+| `targetsManager.makeJobs` | `auto` | Number of make jobs (`auto` uses CPU count). |
+| `targetsManager.maxParallel` | `4` | Maximum parallel target executions. |
+| `targetsManager.dashboards` | See `package.json` | Dashboards shown in the Embedded Targets Manager menu. |
+
+Each dashboard supports:
+
+- `name`: display name in the menu.
+- `moduleRoots`: one or two root paths to discover modules under.
+- `excludedModules`: module names to skip.
+- `targets`: the target names shown in the dashboard.

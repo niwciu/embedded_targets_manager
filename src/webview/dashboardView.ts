@@ -1,0 +1,283 @@
+import * as vscode from 'vscode';
+import { DashboardState } from '../state/types';
+
+export type WebviewMessage =
+  | { type: 'runTarget'; moduleId: string; target: string }
+  | { type: 'runTargetForModule'; moduleId: string }
+  | { type: 'runTargetForAllModules'; target: string }
+  | { type: 'reveal'; moduleId: string; target: string }
+  | { type: 'revealConfigure'; moduleId: string }
+  | { type: 'configureModule'; moduleId: string }
+  | { type: 'reconfigureModule'; moduleId: string }
+  | { type: 'configureAllModules' }
+  | { type: 'refresh' }
+  | { type: 'runAll' }
+  | { type: 'rerunFailed' }
+  | { type: 'stopAll' }
+  | { type: 'clearAllTasks' };
+
+export class DashboardViewProvider implements vscode.Disposable {
+  private panel?: vscode.WebviewPanel;
+  private lastState?: DashboardState;
+
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly onMessage: (message: WebviewMessage) => void,
+    private readonly title: string,
+    private readonly moduleLabel: string,
+    private readonly actionsLabel: string,
+  ) {}
+
+  dispose(): void {
+    this.panel?.dispose();
+    this.panel = undefined;
+  }
+
+  show(): void {
+    if (this.panel) {
+      this.panel.reveal();
+      return;
+    }
+
+    this.panel = vscode.window.createWebviewPanel(
+      'targetsManager.dashboard',
+      this.title,
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+      },
+    );
+    this.panel.webview.html = this.getHtml(this.panel.webview);
+    this.panel.webview.onDidReceiveMessage((message) => this.onMessage(message));
+    this.panel.onDidDispose(() => {
+      this.panel = undefined;
+    });
+    if (this.lastState) {
+      void this.panel.webview.postMessage({ type: 'state', payload: this.lastState });
+    }
+  }
+
+  setState(state: DashboardState): void {
+    this.lastState = state;
+    if (!this.panel) {
+      return;
+    }
+    this.panel.webview.postMessage({ type: 'state', payload: state });
+  }
+
+  private getHtml(webview: vscode.Webview): string {
+    const nonce = String(Date.now());
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Targets Dashboard</title>
+  <style>
+    body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 8px; font-size: 14px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+    button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+    button:hover { background: var(--vscode-button-hoverBackground); }
+    table { width: auto; border-collapse: collapse; }
+    th, td { padding: 4px; text-align: center; border-bottom: 1px solid var(--vscode-editorGroup-border); white-space: nowrap; }
+    th { position: sticky; top: 0; background: var(--vscode-editor-background); }
+    td.module { text-align: left; cursor: pointer; }
+    td.actions { text-align: left; }
+    .cell { display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .run { opacity: 1; font-size: 14px; cursor: pointer; }
+    .status { font-weight: 600; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; width: 1.4em; }
+    .configure-status { font-weight: 600; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; width: 1.4em; }
+    .status.idle { color: var(--vscode-descriptionForeground); }
+    .status.running { color: var(--vscode-terminal-ansiYellow); }
+    .status.success { color: var(--vscode-terminal-ansiGreen); }
+    .status.warning { color: var(--vscode-terminal-ansiYellow); }
+    .status.failed { color: var(--vscode-terminal-ansiRed); }
+    .status.missing { color: var(--vscode-disabledForeground); }
+    .configure-status.idle { color: var(--vscode-descriptionForeground); }
+    .configure-status.running { color: var(--vscode-terminal-ansiYellow); }
+    .configure-status.success { color: var(--vscode-terminal-ansiGreen); }
+    .configure-status.failed { color: var(--vscode-terminal-ansiRed); }
+    .module-actions { display: inline-flex; gap: 6px; }
+    .module-actions button { font-size: 14px; padding: 2px 6px; min-width: 24px; background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-editorGroup-border); }
+    .module-actions button:hover { background: var(--vscode-list-hoverBackground); }
+    .module-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .target-header-content { display: inline-flex; align-items: center; gap: 6px; }
+    .target-header button { background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-editorGroup-border); padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .target-header button:hover { background: var(--vscode-list-hoverBackground); }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button data-action="refresh">Refresh</button>
+    <button data-action="configureAllModules">Configure All</button>
+    <button data-action="runAll">Run All</button>
+    <button data-action="rerunFailed">Rerun Failed</button>
+    <button data-action="stopAll">Stop All</button>
+    <button data-action="clearAllTasks">Clear Tasks</button>
+  </div>
+  <div id="table"></div>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const table = document.getElementById('table');
+
+    document.querySelectorAll('button[data-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        vscode.postMessage({ type: button.dataset.action });
+      });
+    });
+
+    function render(state) {
+      if (!state || !state.modules) {
+        table.innerHTML = '<p>No modules found.</p>';
+        return;
+      }
+
+      const headerTargets = state.targets.map((target) =>
+        [
+          '<th data-target=\"' + target.name + '\" class=\"target-header\">',
+          '<span class=\"target-header-content\">',
+          '<span>' + target.name + '</span>',
+          '<button title=\"Run target for all modules\" data-run-all-target=\"true\" data-target=\"' + target.name + '\">▶</button>',
+          '</span>',
+          '</th>',
+        ].join(''),
+      ).join('');
+      const rows = state.modules.map((moduleState) => {
+        const configureLabel = moduleState.needsConfigure ? 'Configure module (create out/)' : 'Reconfigure module (delete out/ then configure)';
+        const configureAction = moduleState.needsConfigure ? 'configure' : 'reconfigure';
+        const configureIcon = '🛠️';
+        const configureStatus = moduleState.configure?.status || 'idle';
+        const configureStatusIcon = configureStatus === 'running' ? '⏳' : configureStatus === 'success' ? '✓' : configureStatus === 'failed' ? '✗' : '•';
+        const runDisabled = moduleState.needsConfigure ? 'disabled' : '';
+        const moduleActions = [
+          '<span class=\"module-actions\">',
+          '<button title=\"' + configureLabel + '\" data-configure=\"true\" data-action=\"' + configureAction + '\" data-module=\"' + moduleState.module.id + '\">' + configureIcon + '</button>',
+          '<span class=\"configure-status ' +
+            configureStatus +
+            '\" title=\"Configure status: ' +
+            configureStatus +
+            '. Click to view output.\" data-configure-status=\"true\" data-module=\"' +
+            moduleState.module.id +
+            '\">' +
+            configureStatusIcon +
+            '</span>',
+          '<button title=\"Run all targets\" data-run-module=\"true\" data-module=\"' + moduleState.module.id + '\" ' + runDisabled + '>▶</button>',
+          '</span>',
+        ].join('');
+        const cells = state.targets.map((target) => {
+          const available = moduleState.availability[target.name];
+          const run = moduleState.runs[target.name] || { status: 'idle' };
+          if (!available) {
+            return '<td><div class=\"cell\"><span class=\"status missing\">-</span></div></td>';
+          }
+          const statusClass = run.status;
+          const icon =
+            run.status === 'running'
+              ? '⏳'
+              : run.status === 'success'
+                ? '✓'
+                : run.status === 'warning'
+                  ? '⚠️'
+                  : run.status === 'failed'
+                    ? '✗'
+                    : '•';
+          return [
+            '<td data-module=\"' + moduleState.module.id + '\" data-target=\"' + target.name + '\">',
+            '<div class=\"cell\">',
+            '<span class=\"status ' + statusClass + '\" data-reveal=\"true\">' + icon + '</span>',
+            '<span class=\"run\" data-run=\"true\">▶</span>',
+            '</div>',
+            '</td>',
+          ].join('');
+        }).join('');
+        return [
+          '<tr>',
+          '<td class=\"module\" data-module=\"' + moduleState.module.id + '\">' + moduleState.module.name + '</td>',
+          '<td class=\"actions\">' + moduleActions + '</td>',
+          cells,
+          '</tr>',
+        ].join('');
+      }).join('');
+
+      table.innerHTML = [
+        '<table>',
+        '<thead>',
+        '<tr>',
+        '<th>${this.moduleLabel}</th>',
+        '<th>${this.actionsLabel}</th>',
+        headerTargets,
+        '</tr>',
+        '</thead>',
+        '<tbody>',
+        rows,
+        '</tbody>',
+        '</table>',
+      ].join('');
+
+      table.querySelectorAll('td.module').forEach((cell) => {
+        cell.addEventListener('click', () => {
+          vscode.postMessage({ type: 'runTargetForModule', moduleId: cell.dataset.module });
+        });
+      });
+
+      table.querySelectorAll('button[data-configure=\"true\"]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const action = button.dataset.action;
+          if (action === 'reconfigure') {
+            vscode.postMessage({ type: 'reconfigureModule', moduleId: button.dataset.module });
+          } else {
+            vscode.postMessage({ type: 'configureModule', moduleId: button.dataset.module });
+          }
+        });
+      });
+
+      table.querySelectorAll('button[data-run-module=\"true\"]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          vscode.postMessage({ type: 'runTargetForModule', moduleId: button.dataset.module });
+        });
+      });
+
+      table.querySelectorAll('button[data-run-all-target=\"true\"]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          vscode.postMessage({ type: 'runTargetForAllModules', target: button.dataset.target });
+        });
+      });
+
+      table.querySelectorAll('[data-run="true"]').forEach((runButton) => {
+        runButton.addEventListener('click', (event) => {
+          const cell = event.target.closest('td');
+          vscode.postMessage({ type: 'runTarget', moduleId: cell.dataset.module, target: cell.dataset.target });
+        });
+      });
+
+      table.querySelectorAll('[data-reveal="true"]').forEach((status) => {
+        status.addEventListener('click', (event) => {
+          const cell = event.target.closest('td');
+          vscode.postMessage({ type: 'reveal', moduleId: cell.dataset.module, target: cell.dataset.target });
+        });
+      });
+
+      table.querySelectorAll('[data-configure-status="true"]').forEach((status) => {
+        status.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const moduleId = event.target.dataset.module;
+          vscode.postMessage({ type: 'revealConfigure', moduleId });
+        });
+      });
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'state') {
+        render(event.data.payload);
+      }
+    });
+  </script>
+</body>
+</html>`;
+  }
+}
